@@ -710,6 +710,8 @@ class TicketPrinter:
         workspace = order.get("WorkSpace") or ""
         space = order.get("Space") or ""
         vehicle_license_plate = order.get("VehicleLicensePlate") or ""
+        leaves_key = "SI" if self._is_truthy_flag(order.get("Proceced")) else "NO"
+        parking_info = f"ESPACIO: {workspace} - {space} | DEJA LLAVE: {leaves_key}"
         observations = order.get("Observations") or ""
         created_at = order.get("Updated") or order.get("Hour") or order.get("Created") or ""
         header_lines = [
@@ -717,8 +719,10 @@ class TicketPrinter:
             (self.config.company_name or "CENTRO DE PRODUCCION").center(TICKET_WIDTH),
             self.config.company_address.center(TICKET_WIDTH),
             "=" * TICKET_WIDTH,
+            self._large_centered_line(str(vehicle_license_plate)),
+            "-" * TICKET_WIDTH,
             f"NUMERO: {order_number}",
-            f"ESPACIO: {space}",
+            *textwrap.wrap(parking_info, width=TICKET_WIDTH, break_long_words=False),
             f"FECHA Y HORA: {self._format_datetime(created_at)}",
         ]
         if cashier:
@@ -743,9 +747,6 @@ class TicketPrinter:
         footer_lines.append(f"Sayri V {SCRIPT_VERSION}".center(TICKET_WIDTH))
 
         lines: List[Any] = list(header_lines)
-        lines.append("-" * TICKET_WIDTH)
-        if vehicle_license_plate:
-            lines.append(self._large_centered_line(str(vehicle_license_plate)))
         lines.extend(item_lines)
         lines.append("-" * TICKET_WIDTH)
         lines.extend(footer_lines)
