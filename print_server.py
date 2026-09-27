@@ -707,11 +707,10 @@ class TicketPrinter:
         order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
         customer = order.get("ExternalPerson", "")
         cashier = order.get("Cashier") or order.get("InternalPerson") or ""
-        workspace = order.get("WorkSpace") or ""
         space = order.get("Space") or ""
         vehicle_license_plate = order.get("VehicleLicensePlate") or ""
         leaves_key = "SI" if self._is_truthy_flag(order.get("Proceced")) else "NO"
-        parking_info = f"ESPACIO: {workspace} - {space} | DEJA LLAVE: {leaves_key}"
+        parking_info = f"ESPACIO: {space} | DEJA LLAVE: {leaves_key}"
         observations = order.get("Observations") or ""
         created_at = order.get("Updated") or order.get("Hour") or order.get("Created") or ""
         header_lines = [
