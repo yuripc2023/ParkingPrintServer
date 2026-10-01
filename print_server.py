@@ -720,9 +720,9 @@ class TicketPrinter:
             "=" * TICKET_WIDTH,
             self._large_centered_line(str(vehicle_license_plate)),
             "-" * TICKET_WIDTH,
-            f"NUMERO: {order_number}",
             *textwrap.wrap(parking_info, width=TICKET_WIDTH, break_long_words=False),
             f"FECHA Y HORA: {self._format_datetime(created_at)}",
+            f"NUMERO: {order_number}",
         ]
         if cashier:
             header_lines.append(f"ASESOR: {cashier}")
