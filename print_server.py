@@ -706,7 +706,7 @@ class TicketPrinter:
         order_id = order.get("id", "")
         order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
         customer = order.get("ExternalPerson", "")
-        cashier = order.get("Cashier") or order.get("InternalPerson") or ""
+        cashier = self._format_person_short_name(order.get("Cashier") or order.get("InternalPerson") or "")
         space = order.get("Space") or ""
         vehicle_license_plate = order.get("VehicleLicensePlate") or ""
         leaves_key = "SI" if self._is_truthy_flag(order.get("Proceced")) else "NO"
@@ -719,6 +719,7 @@ class TicketPrinter:
             self.config.company_address.center(TICKET_WIDTH),
             "=" * TICKET_WIDTH,
             self._large_centered_line(str(vehicle_license_plate)),
+            *(["-" * TICKET_WIDTH, barcode] if (barcode := self._build_plate_barcode_bytes(str(vehicle_license_plate))) else []),
             "-" * TICKET_WIDTH,
             *textwrap.wrap(parking_info, width=TICKET_WIDTH, break_long_words=False),
             f"FECHA Y HORA: {self._format_datetime(created_at)}",
@@ -754,7 +755,7 @@ class TicketPrinter:
 
     def _build_precuenta_bytes(self, order: Dict[str, Any]) -> bytes:
         order_number = f"{order.get('OrderSerie', '')}-{order.get('OrderNumber', '')}".strip("-")
-        cashier = order.get("Cashier") or order.get("InternalPerson") or ""
+        cashier = self._format_person_short_name(order.get("Cashier") or order.get("InternalPerson") or "")
         workspace = order.get("WorkSpace") or ""
         space = order.get("Space") or ""
         observations = order.get("Observations") or ""
@@ -892,6 +893,28 @@ class TicketPrinter:
         bold_off = b"\x1b\x45\x00"
         return align_center + size_on + bold_on + self._encode_text(text.strip()) + bold_off + size_off + align_left
 
+    @staticmethod
+    def _build_plate_barcode_bytes(plate: str) -> bytes:
+        plate = plate.strip()
+        if not plate:
+            return b""
+        if any(ord(character) < 32 or ord(character) > 126 for character in plate):
+            logging.warning("No se genera codigo de barras: la placa contiene caracteres no compatibles con CODE128")
+            return b""
+        # CODE128 subset B; ESC/POS requires literal braces to be doubled.
+        data = b"{B" + plate.replace("{", "{{").encode("ascii")
+        if len(data) > 255:
+            logging.warning("No se genera codigo de barras: la placa excede el limite de CODE128")
+            return b""
+        return (
+            b"\x1b\x61\x01"  # Center the barcode.
+            b"\x1d\x48\x00"  # The plate is already printed above; omit HRI text.
+            b"\x1d\x77\x02"  # Two dots per module.
+            b"\x1d\x68\x50"  # Height: 80 dots.
+            b"\x1d\x6b\x49" + bytes([len(data)]) + data
+            + b"\x1b\x61\x00"  # Restore left alignment for subsequent lines.
+        )
+
     def _format_print_detail_rows(self, description: str) -> List[Any]:
         if self.config.detail_use_highlight_style:
             return [self._highlight_line(row) for row in self._format_sized_detail_rows(description)]
@@ -1000,6 +1023,15 @@ class TicketPrinter:
         if " - " in raw_value:
             raw_value = raw_value.split(" - ", 1)[0]
         return raw_value.strip().upper()
+
+    @staticmethod
+    def _format_person_short_name(value: str) -> str:
+        parts = str(value or "").strip().split()
+        if not parts:
+            return ""
+        if len(parts) == 1:
+            return parts[0].upper()
+        return f"{parts[0].upper()} {parts[1][0].upper()}."
 
     @staticmethod
     def _format_precuenta_header() -> str:
