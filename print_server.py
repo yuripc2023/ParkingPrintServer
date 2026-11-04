@@ -743,8 +743,9 @@ class TicketPrinter:
         if observations:
             footer_lines.append(f"OBSERVACIONES: {observations}"[:120])
         if self.config.footer_message:
-            for chunk in textwrap.wrap(self.config.footer_message, width=TICKET_WIDTH, break_long_words=False):
-                footer_lines.append(chunk.center(TICKET_WIDTH))
+            for paragraph in self.config.footer_message.replace("|", "\n").splitlines():
+                for chunk in textwrap.wrap(paragraph.strip(), width=TICKET_WIDTH, break_long_words=False) or [""]:
+                    footer_lines.append(chunk.center(TICKET_WIDTH))
         footer_lines.append(f"Sayri V {SCRIPT_VERSION}".center(TICKET_WIDTH))
 
         lines: List[Any] = list(header_lines)
@@ -952,12 +953,28 @@ class TicketPrinter:
 
     def _encode_mixed_lines(self, lines: List[Any]) -> bytes:
         encoded_lines: List[bytes] = []
-        for line in lines:
+        restore_alignment = False
+        for index, line in enumerate(lines):
+            if index:
+                encoded_lines.append(b"\n")
+            if restore_alignment:
+                encoded_lines.append(b"\x1b\x61\x00")
+                restore_alignment = False
+            if isinstance(line, str) and line in ("-" * TICKET_WIDTH, "=" * TICKET_WIDTH):
+                # 80 mm: 576 printable dots / 12 dots per font-A character.
+                encoded_lines.append(
+                    b"\x1b\x61\x01\x1b\x4d\x00\x1d\x21\x00"
+                    + self._encode_text(line[0] * 48)
+                )
+                restore_alignment = True
+                continue
             if isinstance(line, bytes):
                 encoded_lines.append(line)
             else:
                 encoded_lines.append(self._encode_text(str(line)))
-        return b"\n".join(encoded_lines)
+        if restore_alignment:
+            encoded_lines.append(b"\n\x1b\x61\x00")
+        return b"".join(encoded_lines)
 
     def _encode_text(self, text: str) -> bytes:
         normalized_text = unicodedata.normalize("NFC", text)
