@@ -709,6 +709,7 @@ class TicketPrinter:
         cashier = self._format_person_short_name(order.get("Cashier") or order.get("InternalPerson") or "")
         space = order.get("Space") or ""
         vehicle_license_plate = order.get("VehicleLicensePlate") or ""
+        ticket_code = order.get("TicketCode") or ""
         leaves_key = "SI" if self._is_truthy_flag(order.get("Proceced")) else "NO"
         parking_info = f"ESPACIO: {space} | DEJA LLAVE: {leaves_key}"
         observations = order.get("Observations") or ""
@@ -719,7 +720,7 @@ class TicketPrinter:
             self.config.company_address.center(TICKET_WIDTH),
             "=" * TICKET_WIDTH,
             self._large_centered_line(str(vehicle_license_plate)),
-            *(["-" * TICKET_WIDTH, barcode] if (barcode := self._build_plate_barcode_bytes(str(vehicle_license_plate))) else []),
+            *(["-" * TICKET_WIDTH, barcode] if (barcode := self._build_ticket_barcode_bytes(str(ticket_code))) else []),
             "-" * TICKET_WIDTH,
             *textwrap.wrap(parking_info, width=TICKET_WIDTH, break_long_words=False),
             f"FECHA Y HORA: {self._format_datetime(created_at)}",
@@ -733,7 +734,7 @@ class TicketPrinter:
         item_lines.append("-" * TICKET_WIDTH)
         for detail in details:
             product = (detail.get("Product") or "").strip()
-            item_lines.extend(self._format_print_detail_rows(product))
+            item_lines.extend(self._format_print_detail_rows(product, reduced_font=True))
             detail_obs = (detail.get("Observations") or "").strip()
             if detail_obs:
                 item_lines.extend(self._format_print_detail_rows(f"Obs: {detail_obs}"))
@@ -894,28 +895,46 @@ class TicketPrinter:
         return align_center + size_on + bold_on + self._encode_text(text.strip()) + bold_off + size_off + align_left
 
     @staticmethod
-    def _build_plate_barcode_bytes(plate: str) -> bytes:
-        plate = plate.strip()
-        if not plate:
+    def _build_ticket_barcode_bytes(ticket_code: str) -> bytes:
+        ticket_code = ticket_code.strip()
+        if not ticket_code:
             return b""
-        if any(ord(character) < 32 or ord(character) > 126 for character in plate):
-            logging.warning("No se genera codigo de barras: la placa contiene caracteres no compatibles con CODE128")
+        if any(ord(character) < 32 or ord(character) > 126 for character in ticket_code):
+            logging.warning("No se genera codigo de barras: TicketCode contiene caracteres no compatibles con CODE128")
             return b""
-        # CODE128 subset B; ESC/POS requires literal braces to be doubled.
-        data = b"{B" + plate.replace("{", "{{").encode("ascii")
+        # Use the same text-only CODE128 subset as the readable plate barcode.
+        # Avoid subset switching and binary digit-pair bytes on CBX firmware.
+        data = b"{B" + ticket_code.replace("{", "{{").encode("ascii")
         if len(data) > 255:
-            logging.warning("No se genera codigo de barras: la placa excede el limite de CODE128")
+            logging.warning("No se genera codigo de barras: TicketCode excede el limite de CODE128")
             return b""
         return (
+            b"\x1b\x4a\x18"  # Leave 24 dots of white space above the barcode.
             b"\x1b\x61\x01"  # Center the barcode.
-            b"\x1d\x48\x00"  # The plate is already printed above; omit HRI text.
+            b"\x1d\x48\x00"  # Hide human-readable text; print only the barcode.
             b"\x1d\x77\x02"  # Two dots per module.
-            b"\x1d\x68\x50"  # Height: 80 dots.
+            b"\x1d\x68\xa0"  # Height: 160 dots for easier scanner alignment.
             b"\x1d\x6b\x49" + bytes([len(data)]) + data
+            + b"\x1b\x4a\x18"  # Leave white space below the barcode.
             + b"\x1b\x61\x00"  # Restore left alignment for subsequent lines.
         )
 
-    def _format_print_detail_rows(self, description: str) -> List[Any]:
+    def _format_print_detail_rows(self, description: str, reduced_font: bool = False) -> List[Any]:
+        if reduced_font:
+            # Font B: 9 dots wide, doubled to 18; 32 characters fit 576 dots (80 mm).
+            rows = textwrap.wrap(
+                " ".join(str(description or "").split()),
+                width=32,
+                break_long_words=True,
+                break_on_hyphens=False,
+            ) or [""]
+            return [
+                b"\x1b\x61\x01"  # Center using the printer's full printable width.
+                + b"\x1b\x4d\x01\x1d\x21\x10\x1b\x45\x01"
+                + b"\n".join(self._encode_text(row) for row in rows)
+                + b"\x1b\x45\x00\x1d\x21\x00\x1b\x4d\x00"
+                + b"\n\x1b\x61\x00"  # Restore alignment at the start of a line.
+            ]
         if self.config.detail_use_highlight_style:
             return [self._highlight_line(row) for row in self._format_sized_detail_rows(description)]
 
