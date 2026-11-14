@@ -1011,7 +1011,7 @@ class TicketPrinter:
         if not value:
             return ""
         try:
-            return datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M:%S")
+            return datetime.fromisoformat(value).strftime("%d/%m/%Y %H:%M:%S")
         except ValueError:
             return value
 
